@@ -3,43 +3,76 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Expense Tracker</title>
-    <link rel="stylesheet" href="style.css">
+    <title>Expense & Budget Visualizer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../css/style.css">
 </head>
 <body>
-    <h1>Expense & Budget Visualizer</h1>
+    <div id="topBar">
+        <h1>Expense &amp; Budget Visualizer</h1>
+        <button id="themeToggle" type="button" aria-label="Toggle dark mode">🌙 Dark</button>
+    </div>
 
-    <h2 id="balance">
-        Total: Rp0
-    </h2>
+    <h2 id="balance">Total: Rp0</h2>
 
     <form id="transactionForm">
-
-        <input
-        id="itemName"
-        type="text"
-        placeholder="Item Name">
-
-        <input
-        id="amount"
-        type="number"
-        placeholder="Amount">
+        <input id="itemName" type="text" placeholder="Item Name">
+        <input id="amount" type="number" placeholder="Amount" min="1" step="1">
 
         <select id="category">
             <option value="">Choose Category</option>
-            <option value="Food">Food</option>
-            <option value="Transport">Transport</option>
-            <option value="Fun">Fun</option>
         </select>
 
-            <button id="addButton">Add</button>
-
+        <button id="addButton" type="submit">Add</button>
     </form>
+
+    <!-- Add custom category -->
+    <div id="addCategorySection">
+        <input id="newCategoryInput" type="text" placeholder="New category name">
+        <button id="addCategoryButton" type="button">+ Add Category</button>
+        <button id="resetCategoriesButton" type="button">↺ Reset</button>
+    </div>
+
     <div id="toast"></div>
+
+    <!-- Budget limit -->
+    <div id="budgetSection">
+        <label for="budgetInput">Spending limit per transaction:</label>
+        <div id="budgetInputRow">
+            <span class="rp-prefix">Rp</span>
+            <input id="budgetInput" type="number" placeholder="e.g. 50000" min="1" step="1">
+            <button id="budgetSaveBtn" type="button">Set</button>
+            <button id="budgetClearBtn" type="button">Clear</button>
+        </div>
+        <p id="budgetStatus"></p>
+    </div>
+
+    <div id="listControls">
+        <label for="sortSelect">Sort by:</label>
+        <select id="sortSelect">
+            <option value="default">Default (date added)</option>
+            <option value="amount-asc">Amount: Low → High</option>
+            <option value="amount-desc">Amount: High → Low</option>
+            <option value="category">Category A–Z</option>
+        </select>
+    </div>
+
     <div id="transactionList"></div>
 
+    <div id="chartContainer">
+        <p id="chartPlaceholder">Add a transaction to see the chart.</p>
+        <canvas id="expenseChart"></canvas>
+    </div>
+
+    <!-- Monthly summary -->
+    <section id="monthlySummary">
+        <h2>Monthly Summary</h2>
+        <div id="monthlyCards"></div>
+    </section>
+
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <canvas id="expenseChart"></canvas>
-    <script src="script.js"></script>
+    <script src="../js/script.js"></script>
 </body>
 </html>
