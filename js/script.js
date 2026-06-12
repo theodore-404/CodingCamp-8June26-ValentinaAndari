@@ -15,6 +15,8 @@ const newCategoryInput  = document.getElementById("newCategoryInput");
 const addCategoryBtn    = document.getElementById("addCategoryButton");
 const resetCategoriesBtn = document.getElementById("resetCategoriesButton");
 const sortSelect       = document.getElementById("sortSelect");
+const searchInput      = document.getElementById("searchInput");
+const searchClear      = document.getElementById("searchClear");
 const budgetInput      = document.getElementById("budgetInput");
 const budgetSaveBtn    = document.getElementById("budgetSaveBtn");
 const budgetClearBtn   = document.getElementById("budgetClearBtn");
@@ -73,7 +75,7 @@ form.addEventListener("submit", function(event) {
     updateBalance();
     updateChart();
     renderMonthlySummary();
-    showToast("Transaction added");
+    showToast("✅ Transaction added");
 
     // Clear form
     itemName.value = "";
@@ -176,6 +178,20 @@ function renderBudgetStatus() {
 
 sortSelect.addEventListener("change", renderTransactions);
 
+// ── Search ────────────────────────────────────────────────────────────────────
+
+searchInput.addEventListener("input", function() {
+    searchClear.style.display = searchInput.value ? "flex" : "none";
+    renderTransactions();
+});
+
+searchClear.addEventListener("click", function() {
+    searchInput.value = "";
+    searchClear.style.display = "none";
+    searchInput.focus();
+    renderTransactions();
+});
+
 // ── Render transaction list ───────────────────────────────────────────────────
 
 function getSortedTransactions() {
@@ -203,43 +219,104 @@ function renderTransactions() {
         return;
     }
 
+    const query  = searchInput.value.trim().toLowerCase();
     const sorted = getSortedTransactions();
 
+    // Filter by search query (matches name or category, case-insensitive)
+    const filtered = query
+        ? sorted.filter(function(item) {
+            return item.name.toLowerCase().includes(query) ||
+                   item.category.toLowerCase().includes(query);
+          })
+        : sorted;
+
+    if (filtered.length === 0) {
+        list.innerHTML = "<p id=\"emptyState\">No results for \"" + searchInput.value.trim() + "\".</p>";
+        return;
+    }
+
     list.innerHTML = "";
-    sorted.forEach(function(item, sortedIndex) {
+    filtered.forEach(function(item) {
         // Find the real index in the original array for correct deletion
         const realIndex = transactions.indexOf(item);
         const overLimit = budgetLimit > 0 && item.amount > budgetLimit;
-        list.innerHTML += `
-        <div class="transaction-item${overLimit ? " over-limit" : ""}">
-            <span>${item.name} — Rp${item.amount} — ${item.category}${overLimit ? " ⚠️" : ""}</span>
-            <button onclick="deleteTransaction(${realIndex})">Delete</button>
-        </div>`;
+
+        // Highlight matching text in name
+        let displayName = item.name;
+        if (query) {
+            const regex = new RegExp("(" + query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "gi");
+            displayName = item.name.replace(regex, "<mark>$1</mark>");
+        }
+
+        const div = document.createElement("div");
+        div.className = "transaction-item" + (overLimit ? " over-limit" : "") + " tx-slide-in";
+        div.innerHTML = `
+            <span>${displayName} — Rp${item.amount.toLocaleString()} — ${item.category}${overLimit ? " ⚠️" : ""}</span>
+            <button onclick="deleteTransaction(${realIndex})">🗑 Delete</button>`;
+        list.appendChild(div);
     });
 }
 
 // ── Delete transaction ────────────────────────────────────────────────────────
 
 function deleteTransaction(index) {
-    transactions.splice(index, 1);
-    saveTransactions();
-    renderTransactions();
-    updateBalance();
-    updateChart();
-    renderMonthlySummary();
-    showToast("Transaction deleted");
+    // Find the DOM item and animate it out before removing
+    const listEl = document.getElementById("transactionList");
+    const allItems = listEl.querySelectorAll(".transaction-item");
+    // Match by real index encoded in the delete button's onclick
+    let targetEl = null;
+    allItems.forEach(function(el) {
+        const btn = el.querySelector("button");
+        if (btn && btn.getAttribute("onclick") === "deleteTransaction(" + index + ")") {
+            targetEl = el;
+        }
+    });
+
+    function doDelete() {
+        transactions.splice(index, 1);
+        saveTransactions();
+        renderTransactions();
+        updateBalance();
+        updateChart();
+        renderMonthlySummary();
+        showToast("🗑 Transaction deleted");
+    }
+
+    if (targetEl) {
+        targetEl.classList.add("tx-fade-out");
+        targetEl.addEventListener("animationend", doDelete, { once: true });
+    } else {
+        doDelete();
+    }
 }
 
-// ── Update balance ────────────────────────────────────────────────────────────
+// ── Update balance + summary cards ───────────────────────────────────────────
 
 function updateBalance() {
     let total = 0;
-    transactions.forEach(function(item) {
-        total += item.amount;
-    });
+    transactions.forEach(function(item) { total += item.amount; });
+
     const balanceEl = document.getElementById("balance");
-    balanceEl.textContent = "Total: Rp" + total;
-    balanceEl.className = (budgetLimit > 0 && total > budgetLimit) ? "over-limit-balance" : "";
+    const cardEl    = document.getElementById("cardTotalExpense");
+    const isOver    = budgetLimit > 0 && total > budgetLimit;
+
+    balanceEl.textContent = "Rp" + total.toLocaleString();
+
+    // Red border pulse on the card when over limit
+    if (isOver) {
+        balanceEl.classList.add("over-limit-balance");
+        cardEl.classList.add("over-limit-card-pulse");
+    } else {
+        balanceEl.classList.remove("over-limit-balance");
+        cardEl.classList.remove("over-limit-card-pulse");
+    }
+
+    // Total transactions count
+    document.getElementById("totalTxCount").textContent = transactions.length;
+
+    // Active categories count (categories that have at least 1 transaction)
+    const activeCats = new Set(transactions.map(function(t) { return t.category; }));
+    document.getElementById("totalCatCount").textContent = activeCats.size;
 }
 
 // ── Update chart ──────────────────────────────────────────────────────────────
@@ -247,18 +324,29 @@ function updateBalance() {
 function updateChart() {
     const placeholder = document.getElementById("chartPlaceholder");
     const canvas      = document.getElementById("expenseChart");
+    const inner       = document.getElementById("chartInner");
 
     if (transactions.length === 0) {
         placeholder.style.display = "block";
-        canvas.style.display = "none";
+        inner.style.display = "none";
         if (chart) { chart.destroy(); chart = null; }
+        renderChartStats({});
+        renderTopCategories({}, [], []);
         return;
     }
 
     placeholder.style.display = "none";
-    canvas.style.display = "block";
+    inner.style.display = "flex";
 
-    // Sum amounts per category — only include categories with spending > 0
+    // Animate chart container — use the actual panel ID
+    const container = document.getElementById("panel-chart");
+    if (container) {
+        container.classList.remove("chart-update-flash");
+        void container.offsetWidth;
+        container.classList.add("chart-update-flash");
+    }
+
+    // Sum amounts per category
     const totals = {};
     transactions.forEach(function(item) {
         totals[item.category] = (totals[item.category] || 0) + item.amount;
@@ -266,6 +354,7 @@ function updateChart() {
 
     const labels = Object.keys(totals).filter(function(k) { return totals[k] > 0; });
     const data   = labels.map(function(k) { return totals[k]; });
+    const colors = generateColors(labels.length);
 
     if (chart) { chart.destroy(); }
 
@@ -275,24 +364,116 @@ function updateChart() {
             labels: labels,
             datasets: [{
                 data: data,
-                backgroundColor: generateColors(labels.length)
+                backgroundColor: colors,
+                borderWidth: 2,
+                borderColor: "rgba(10,10,10,0.15)"
             }]
         },
         options: {
             responsive: true,
+            animation: { duration: 500, easing: "easeInOutQuart" },
             plugins: {
                 legend: { position: "bottom" }
             }
         }
     });
+
+    renderTopCategories(totals, labels, colors);
+    renderChartStats(totals, colors, labels);
+}
+
+// ── Top 3 categories panel ────────────────────────────────────────────────────
+
+function renderTopCategories(totals, labels, colors) {
+    const container = document.getElementById("topCategories");
+
+    if (!labels || labels.length === 0) {
+        container.innerHTML = "";
+        return;
+    }
+
+    const grandTotal = labels.reduce(function(s, k) { return s + totals[k]; }, 0);
+
+    // Sort by total descending, take top 3
+    const sorted = labels.slice().sort(function(a, b) { return totals[b] - totals[a]; });
+    const top    = sorted.slice(0, 3);
+
+    let html = "<p class=\"top-cat-title\">🏆 Top Categories</p>";
+    top.forEach(function(cat, i) {
+        const pct   = grandTotal > 0 ? Math.round((totals[cat] / grandTotal) * 100) : 0;
+        const color = colors[labels.indexOf(cat)] || "#ccc";
+        const medals = ["🥇", "🥈", "🥉"];
+
+        html += `
+        <div class="top-cat-item">
+            <div class="top-cat-header">
+                <span class="top-cat-name">${medals[i]} ${cat}</span>
+                <span class="top-cat-pct" style="color:${color}">${pct}%</span>
+            </div>
+            <div class="top-cat-bar-bg">
+                <div class="top-cat-bar-fill" style="width:${pct}%; background:${color}"></div>
+            </div>
+            <span class="top-cat-amount">Rp${totals[cat].toLocaleString()}</span>
+        </div>`;
+    });
+
+    container.innerHTML = html;
+}
+
+// ── Chart stats (avg + count per category) ───────────────────────────────────
+
+function renderChartStats(totals, colors, labels) {
+    const container = document.getElementById("chartStats");
+
+    if (!labels || labels.length === 0) {
+        container.innerHTML = "";
+        return;
+    }
+
+    // Count transactions per category
+    const counts = {};
+    transactions.forEach(function(item) {
+        counts[item.category] = (counts[item.category] || 0) + 1;
+    });
+
+    let html = "<div class=\"chart-stats-grid\">";
+    labels.forEach(function(cat, i) {
+        const total   = totals[cat];
+        const count   = counts[cat] || 0;
+        const average = count > 0 ? Math.round(total / count) : 0;
+        const dot     = colors ? colors[i] : "#ccc";
+
+        html += `
+        <div class="chart-stat-card">
+            <div class="chart-stat-label">
+                <span class="chart-stat-dot" style="background:${dot}"></span>
+                ${cat}
+            </div>
+            <div class="chart-stat-row">
+                <span class="chart-stat-key">Transactions</span>
+                <span class="chart-stat-val">${count}</span>
+            </div>
+            <div class="chart-stat-row">
+                <span class="chart-stat-key">Average</span>
+                <span class="chart-stat-val">Rp${average.toLocaleString()}</span>
+            </div>
+            <div class="chart-stat-row">
+                <span class="chart-stat-key">Total</span>
+                <span class="chart-stat-val chart-stat-total">Rp${total.toLocaleString()}</span>
+            </div>
+        </div>`;
+    });
+
+    html += "</div>";
+    container.innerHTML = html;
 }
 
 // ── Generate distinct colors for chart segments ───────────────────────────────
 
 function generateColors(count) {
     const palette = [
-        "#FF6384", "#36A2EB", "#FFCE56", "#4BC0C0",
-        "#9966FF", "#FF9F40", "#C9CBCF", "#E7E9ED"
+        "#003087", "#cc0000", "#1a4a9e", "#8B0000",
+        "#4a6fa5", "#cc4400", "#2255aa", "#993300"
     ];
     const colors = [];
     for (let i = 0; i < count; i++) {
